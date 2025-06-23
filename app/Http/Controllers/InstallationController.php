@@ -95,7 +95,7 @@ class InstallationController extends Controller {
                     if($accessToken !== false && $accessToken !== null) {
                         $shopDetails = $this->getShopDetailsFromShopify($shop, $accessToken);
                         $storeDetails = $this->saveStoreDetailsToDatabase($shopDetails, $accessToken);
-                        $payment = $this->initiatePayment($shop, $accessToken);
+                        // $payment = $this->initiatePayment($shop, $accessToken);
 
                         if($storeDetails) {
                             //At this point the installation process is complete.
@@ -105,7 +105,7 @@ class InstallationController extends Controller {
                                 Auth::login($user);
                                 return redirect()->route('home');
                             } else {
-                                if ($payment["response"]) {
+                                if (isset($payment["response"]) && $payment["response"]) {
                                 return redirect($payment["data"]) ;
                                 }else{
                                 dd('Problem during payment installation. please check logs.');
@@ -278,6 +278,8 @@ class InstallationController extends Controller {
         ];
 
         $response = $this->makeAPOSTCallToShopify( $body, $endpoint, $headers);
+
+        dd($response);
 
         if($response["statusCode"] >= 200 && $response["statusCode"] < 300){
 
