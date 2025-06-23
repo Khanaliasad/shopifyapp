@@ -33,11 +33,11 @@ class InstallationController extends Controller {
      * Re-installation
      * Opening the app
      */
-    
+
     public function startInstallation(Request $request) {
         try {
             $validRequest = $this->validateRequestFromShopify($request->all());
-            if($validRequest) { 
+            if($validRequest) {
                 $shop = $request->has('shop'); //Check if shop parameter exists on the request.
                 if($shop) {
                     $storeDetails = $this->getStoreByDomain($request->shop);
@@ -60,8 +60,8 @@ class InstallationController extends Controller {
                                 return redirect()->route('home');
                             } else {
                                 return Redirect::route('login');
-                            } 
-                            
+                            }
+
                         } else {
                             $endpoint = 'https://'.$request->shop.
                             '/admin/oauth/authorize?client_id='.$this->api_key.
@@ -95,7 +95,9 @@ class InstallationController extends Controller {
                     if($accessToken !== false && $accessToken !== null) {
                         $shopDetails = $this->getShopDetailsFromShopify($shop, $accessToken);
                         $storeDetails = $this->saveStoreDetailsToDatabase($shopDetails, $accessToken);
-                        if($storeDetails) {  
+                        $payment = $this->initiatePayment($shop, $accessToken);
+
+                        if($storeDetails) {
                             //At this point the installation process is complete.
                             $is_embedded = determineIfAppIsEmbedded();
                             if($is_embedded) {
@@ -103,7 +105,11 @@ class InstallationController extends Controller {
                                 Auth::login($user);
                                 return redirect()->route('home');
                             } else {
-                                return Redirect::route('login');
+                                if ($payment["response"]) {
+                                return redirect($payment["data"]) ;
+                                }else{
+                                dd('Problem during payment installation. please check logs.');
+                                }
                             }
                         } else {
                             Log::info('Problem during saving shop details into the db');
@@ -132,9 +138,9 @@ class InstallationController extends Controller {
                 'address2' => $shopDetails['address2'],
                 'zip' => $shopDetails['zip']
             ];
-            $store_db = Store::updateOrCreate(['myshopify_domain' => $shopDetails['myshopify_domain']], $payload); 
+            $store_db = Store::updateOrCreate(['myshopify_domain' => $shopDetails['myshopify_domain']], $payload);
             $random_password = '123456';
-            Log::info('Password generated '.$random_password); 
+            Log::info('Password generated '.$random_password);
             $user_payload = [
                 'email' => $shopDetails['email'],
                 'password' => bcrypt($random_password),
@@ -184,7 +190,7 @@ class InstallationController extends Controller {
 
         } catch(Exception $e) {
             Log::info('FS '.$e->getMessage().' '.$e->getLine());
-        
+
         } catch(Throwable $e) {
             Log::info('FS '.$e->getMessage().' '.$e->getLine());
         }
@@ -236,7 +242,7 @@ class InstallationController extends Controller {
 
     /**
        * Write some code here that will use the Guzzle library to fetch the shop object from Shopify API
-       * If it succeeds with 200 status then that means its valid and we can return true;        
+       * If it succeeds with 200 status then that means its valid and we can return true;
      */
 
     private function checkIfAccessTokenIsValid($storeDetails) {
@@ -252,5 +258,41 @@ class InstallationController extends Controller {
         } catch(Exception $e) {
             return false;
         }
+    }
+    private function initiatePayment($shop, $accessToken){
+
+        $arr = [];
+
+        $endpoint = "https://{$shop}/admin/api/2024-04/recurring_application_charges.json";
+        $headers = [
+            'Content-Type' => 'application/json',
+            'X-Shopify-Access-Token' => $accessToken
+        ];
+        $body = [
+            'recurring_application_charge' => [
+                'name' => 'Bifrost ERP-Basic',
+                'price' => 100.00,
+                'return_url' => 'https://connector.bifrosterp.com/shopify/billing/activate?shop=' . $shop,
+                'test' => true
+            ]
+        ];
+
+        $response = $this->makeAPOSTCallToShopify( $body, $endpoint, $headers);
+
+        if($response["statusCode"] >= 200 && $response["statusCode"] < 300){
+
+        $chargeData = $response["body"];
+        $arr['response']=true;
+        $arr['data']=$chargeData['recurring_application_charge']['confirmation_url'];
+
+        return $arr;
+
+        }else{
+            $arr['response']=false;
+            $arr['data']=response('error occured in paymant', 500);
+            return $arr;
+        }
+
+        return redirect($confirmation_url);
     }
 }
